@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HackerTerm</title>
+  <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="hacker-container">
+    <!-- Boot Screen Overlay -->
+    <div class="boot-screen" id="boot-screen">
+      <div class="boot-content">
+        <div class="boot-logo">HACKERTERM</div>
+        <div class="boot-output" id="boot-output"></div>
+      </div>
+    </div>
+
+    <!-- Title Bar -->
+    <div class="title-bar">
+      <div class="window-controls">
+        <div class="control close" id="close-btn"></div>
+        <div class="control minimize" id="minimize-btn"></div>
+        <div class="control maximize" id="maximize-btn"></div>
+      </div>
+      <div class="title">
+        <span class="title-icon">[</span>
+        <span class="title-text">HACKERTERM</span>
+        <span class="title-icon">]</span>
+        <span class="blink">_</span>
+        <span class="status-indicator" id="status-indicator">SECURE</span>
+      </div>
+      <div class="title-right">
+        <span class="clock" id="clock">00:00:00</span>
+        <button class="settings-btn" id="settings-btn" title="Settings">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tab-bar" id="tab-bar">
+      <div class="tabs-container" id="tabs-container"></div>
+      <button class="new-tab-btn" id="new-tab-btn" title="New Tab (Ctrl+T)">+</button>
+    </div>
+
+    <!-- Settings Panel -->
+    <div class="settings-panel" id="settings-panel">
+      <div class="settings-header">
+        <span>CONFIGURATION</span>
+        <button class="settings-close" id="settings-close">&times;</button>
+      </div>
+      <div class="settings-content">
+        <!-- Theme Section -->
+        <div class="settings-section">
+          <div class="settings-section-title">Theme</div>
+          <div class="settings-row">
+            <label for="theme-select">Color Scheme</label>
+            <select id="theme-select" class="settings-select">
+              <option value="matrix">Matrix Green</option>
+              <option value="cyan">Cyber Cyan</option>
+              <option value="amber">Warning Amber</option>
+              <option value="red">Alert Red</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Font Section -->
+        <div class="settings-section">
+          <div class="settings-section-title">Font</div>
+          <div class="settings-row">
+            <label for="font-size-slider">Size</label>
+            <input type="range" id="font-size-slider" min="10" max="24" value="14" class="slider">
+            <span class="slider-value" id="font-size-value">14px</span>
+          </div>
+        </div>
+
+        <!-- Sound Section -->
+        <div class="settings-section">
+          <div class="settings-section-title">Typing Sound</div>
+          <div class="settings-row">
+            <label for="typing-sound-toggle">Enable Sound</label>
+            <label class="toggle-switch">
+              <input type="checkbox" id="typing-sound-toggle" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <label for="typing-sound-volume">Volume</label>
+            <input type="range" id="typing-sound-volume" min="0" max="100" value="30" class="slider">
+            <span class="slider-value" id="typing-sound-value">30%</span>
+          </div>
+        </div>
+
+        <!-- Effects Section -->
+        <div class="settings-section">
+          <div class="settings-section-title">Visual Effects</div>
+          <div class="settings-row">
+            <label for="effects-toggle">Enable Effects</label>
+            <label class="toggle-switch">
+              <input type="checkbox" id="effects-toggle" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <label for="effects-intensity">Intensity</label>
+            <input type="range" id="effects-intensity" min="0" max="100" value="50" class="slider">
+            <span class="slider-value" id="effects-value">50%</span>
+          </div>
+        </div>
+
+        <!-- Glitch Effects Section -->
+        <div class="settings-section">
+          <div class="settings-section-title">Glitch Effects</div>
+          <div class="settings-row">
+            <label for="glitch-toggle">Enable Glitch</label>
+            <label class="toggle-switch">
+              <input type="checkbox" id="glitch-toggle" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <label for="glitch-intensity">Frequency</label>
+            <input type="range" id="glitch-intensity" min="0" max="100" value="50" class="slider">
+            <span class="slider-value" id="glitch-value">50%</span>
+          </div>
+        </div>
+
+        <!-- Data Panel Section -->
+        <div class="settings-section">
+          <div class="settings-section-title">Data Panel</div>
+          <div class="settings-row">
+            <label for="data-panel-toggle">Show Data Panel</label>
+            <label class="toggle-switch">
+              <input type="checkbox" id="data-panel-toggle" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Keyboard Shortcuts Section -->
+        <div class="settings-section">
+          <div class="settings-section-title">Keyboard Shortcuts</div>
+          <div class="shortcuts-list" id="shortcuts-list"></div>
+          <button class="reset-shortcuts-btn" id="reset-shortcuts-btn">Reset to Defaults</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="main-content">
+      <!-- Terminal Area -->
+      <div class="terminal-area">
+        <div id="pane-container" class="pane-container">
+          <!-- Dynamic panes rendered here by PaneManager -->
+        </div>
+      </div>
+
+      <!-- Data Panel (Right Sidebar) -->
+      <div class="data-panel" id="data-panel">
+        <!-- Globe Section -->
+        <div class="panel-section globe-section">
+          <div class="panel-header">
+            <span class="panel-title">GLOBAL NETWORK</span>
+            <span class="panel-status">TRACKING</span>
+          </div>
+          <div class="globe-container">
+            <canvas id="globe-canvas" width="240" height="240"></canvas>
+          </div>
+        </div>
+
+        <!-- Satellite Section -->
+        <div class="panel-section satellite-section">
+          <div class="panel-header">
+            <span class="panel-title">ACTIVE SATELLITES</span>
+            <span class="sat-count" id="sat-count">8</span>
+          </div>
+          <div class="satellite-list" id="satellite-list">
+            <!-- Populated by DataStreamManager -->
+          </div>
+        </div>
+
+        <!-- City Map Tracking Section -->
+        <div class="panel-section map-section">
+          <div class="panel-header">
+            <span class="panel-title">TARGET TRACKING</span>
+            <span class="panel-status" id="tracking-status">SEARCHING</span>
+          </div>
+          <div class="map-container">
+            <canvas id="city-map-canvas" width="260" height="180"></canvas>
+          </div>
+          <div class="map-info">
+            <span class="map-coords" id="target-coords">---.---/---.---</span>
+            <span class="map-sector" id="target-sector">SECTOR: --</span>
+          </div>
+        </div>
+
+        <!-- Waveform Monitor Section -->
+        <div class="panel-section waveform-section">
+          <div class="panel-header">
+            <span class="panel-title">SIGNAL MONITOR</span>
+            <span class="panel-status">ACTIVE</span>
+          </div>
+          <div class="waveform-container">
+            <canvas id="waveform-canvas" width="260" height="60"></canvas>
+          </div>
+        </div>
+
+        <!-- Data Stream Section -->
+        <div class="panel-section stream-section">
+          <div class="panel-header">
+            <span class="panel-title">DATA STREAM</span>
+            <span class="stream-rate" id="stream-rate">0 B/s</span>
+          </div>
+          <div class="data-stream" id="data-stream">
+            <!-- Populated by DataStreamManager -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Visual Effects Overlays -->
+    <div class="scanlines"></div>
+    <div class="scan-sweep"></div>
+    <div class="grid-overlay"></div>
+    <div class="vignette"></div>
+
+    <!-- Glitch Effect Overlay -->
+    <div id="glitch-overlay" class="glitch-overlay">
+      <canvas id="static-canvas" class="static-canvas"></canvas>
+    </div>
+
+    <!-- Status Footer Bar -->
+    <div class="status-footer" id="status-footer">
+      <div class="footer-section">
+        <span class="footer-label">[SYS]</span>
+        <span class="footer-metric">CPU:<span id="cpu-value">47</span>%</span>
+        <span class="footer-metric">MEM:<span id="mem-value">2.1</span>GB</span>
+      </div>
+      <div class="footer-divider"></div>
+      <div class="footer-section">
+        <span class="footer-label">UPTIME:</span>
+        <span id="uptime-value">00:00:00</span>
+      </div>
+      <div class="footer-divider"></div>
+      <div class="footer-section">
+        <span class="footer-label">ENCRYPT:</span>
+        <span id="encrypt-value">AES-256</span>
+      </div>
+      <div class="footer-divider"></div>
+      <div class="footer-section threat-section">
+        <span class="footer-label">THREAT:</span>
+        <span id="threat-value" class="threat-low">LOW</span>
+      </div>
+      <div class="footer-divider"></div>
+      <div class="footer-section">
+        <span class="footer-label">NODE:</span>
+        <span id="node-value">7F3A</span>
+      </div>
+      <div class="footer-divider"></div>
+      <div class="footer-section">
+        <span class="footer-label">SESSION:</span>
+        <span id="session-value">0x4D2F8A</span>
+      </div>
+    </div>
+
+    <!-- HUD Corner Brackets -->
+    <div class="hud-corner top-left"></div>
+    <div class="hud-corner top-right"></div>
+    <div class="hud-corner bottom-left"></div>
+    <div class="hud-corner bottom-right"></div>
+  </div>
+
+  <script src="modules/GlobeRenderer.js"></script>
+  <script src="modules/DataStreamManager.js"></script>
+  <script src="modules/BootSequence.js"></script>
+  <script src="modules/WaveformRenderer.js"></script>
+  <script src="modules/CityMapRenderer.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
