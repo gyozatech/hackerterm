@@ -1,4 +1,4 @@
-const { ipcRenderer, shell } = require('electron');
+const { ipcRenderer, shell, clipboard } = require('electron');
 const { Terminal } = require('@xterm/xterm');
 const { FitAddon } = require('@xterm/addon-fit');
 const fs = require('fs');
@@ -88,6 +88,101 @@ function saveSettings() {
 
 // Load settings immediately
 loadSettings();
+
+// ========================================
+// CONTEXT MENU
+// ========================================
+
+class ContextMenu {
+  constructor() {
+    this.menu = null;
+    this.currentTerminal = null;
+    this.currentTerminalId = null;
+    this.createMenu();
+  }
+
+  createMenu() {
+    this.menu = document.createElement('div');
+    this.menu.className = 'context-menu';
+    this.menu.innerHTML = `
+      <div class="context-menu-item" data-action="copy">
+        <span>Copy</span>
+        <span class="context-menu-icon">⌘C</span>
+      </div>
+      <div class="context-menu-item" data-action="paste">
+        <span>Paste</span>
+        <span class="context-menu-icon">⌘V</span>
+      </div>
+      <div class="context-menu-separator"></div>
+      <div class="context-menu-item" data-action="clear">
+        <span>Clear</span>
+        <span class="context-menu-icon">⌘K</span>
+      </div>
+    `;
+    document.body.appendChild(this.menu);
+
+    this.menu.addEventListener('click', (e) => {
+      const item = e.target.closest('.context-menu-item');
+      if (item && !item.classList.contains('disabled')) {
+        this.handleAction(item.dataset.action);
+      }
+    });
+
+    document.addEventListener('click', () => this.hide());
+    document.addEventListener('contextmenu', () => this.hide());
+  }
+
+  show(x, y, terminal, terminalId) {
+    this.currentTerminal = terminal;
+    this.currentTerminalId = terminalId;
+
+    const hasSelection = terminal.hasSelection();
+    const copyItem = this.menu.querySelector('[data-action="copy"]');
+    if (copyItem) {
+      copyItem.classList.toggle('disabled', !hasSelection);
+    }
+
+    const menuWidth = 150;
+    const menuHeight = 120;
+    const adjustedX = x + menuWidth > window.innerWidth ? window.innerWidth - menuWidth - 10 : x;
+    const adjustedY = y + menuHeight > window.innerHeight ? window.innerHeight - menuHeight - 10 : y;
+
+    this.menu.style.left = `${adjustedX}px`;
+    this.menu.style.top = `${adjustedY}px`;
+    this.menu.classList.add('visible');
+  }
+
+  hide() {
+    this.menu.classList.remove('visible');
+  }
+
+  handleAction(action) {
+    if (!this.currentTerminal) return;
+
+    switch (action) {
+      case 'copy':
+        if (this.currentTerminal.hasSelection()) {
+          const selection = this.currentTerminal.getSelection();
+          clipboard.writeText(selection);
+        }
+        break;
+      case 'paste':
+        const text = clipboard.readText();
+        if (text && this.currentTerminalId) {
+          ipcRenderer.send('terminal-input', { terminalId: this.currentTerminalId, data: text });
+        }
+        break;
+      case 'clear':
+        this.currentTerminal.clear();
+        break;
+    }
+
+    this.hide();
+    this.currentTerminal.focus();
+  }
+}
+
+let contextMenu = null;
 
 // ========================================
 // SHORTCUT MANAGER
@@ -609,6 +704,9 @@ class PaneManager {
       allowTransparency: true,
       scrollback: 5000,
       tabStopWidth: 4,
+      macOptionIsMeta: true,
+      macOptionClickForcesSelection: false,
+      altSendsMeta: true,
     };
   }
 
@@ -631,6 +729,35 @@ class PaneManager {
 
     container.appendChild(paneElement);
     terminal.open(terminalWrapper);
+
+    // Custom key handler for word navigation
+    terminal.attachCustomKeyEventHandler((e) => {
+      const isMac = process.platform === 'darwin';
+      // Option+Left (macOS) or Ctrl+Left (others) -> word left
+      if (e.type === 'keydown' && e.key === 'ArrowLeft' && ((isMac && e.altKey) || (!isMac && e.ctrlKey))) {
+        ipcRenderer.send('terminal-input', { terminalId, data: '\x1bb' });
+        return false;
+      }
+      // Option+Right (macOS) or Ctrl+Right (others) -> word right
+      if (e.type === 'keydown' && e.key === 'ArrowRight' && ((isMac && e.altKey) || (!isMac && e.ctrlKey))) {
+        ipcRenderer.send('terminal-input', { terminalId, data: '\x1bf' });
+        return false;
+      }
+      // Option+Backspace (macOS) or Ctrl+Backspace (others) -> delete word
+      if (e.type === 'keydown' && e.key === 'Backspace' && ((isMac && e.altKey) || (!isMac && e.ctrlKey))) {
+        ipcRenderer.send('terminal-input', { terminalId, data: '\x17' });
+        return false;
+      }
+      return true;
+    });
+
+    // Context menu handler
+    terminalWrapper.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (contextMenu) {
+        contextMenu.show(e.clientX, e.clientY, terminal, terminalId);
+      }
+    });
 
     this.panes.set(paneId, {
       paneId,
@@ -1923,6 +2050,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       shortcutManager = new ShortcutManager();
       keySoundManager = new KeySoundManager();
       keySoundManager.init();
+      contextMenu = new ContextMenu();
       paneManager = new PaneManager(null);
       tabManager = new TabManager(paneManager);
       paneManager.tabManager = tabManager;

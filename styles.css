@@ -1507,3 +1507,67 @@ body {
   text-shadow: none;
   filter: none;
 }
+
+/* ========================================
+   CONTEXT MENU
+   ======================================== */
+
+.context-menu {
+  position: fixed;
+  background: linear-gradient(180deg, #1a2a1a 0%, #0d1a0d 100%);
+  border: 1px solid var(--primary-dim);
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 150px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 15px rgba(0, 255, 136, 0.1);
+  z-index: 10000;
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(0.95);
+  transition: opacity 0.1s, transform 0.1s, visibility 0.1s;
+  font-family: 'Share Tech Mono', monospace;
+}
+
+.context-menu.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: scale(1);
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  color: #ccc;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.context-menu-item:hover {
+  background: rgba(0, 255, 136, 0.15);
+  color: var(--primary-color);
+}
+
+.context-menu-item.disabled {
+  color: #555;
+  cursor: default;
+  pointer-events: none;
+}
+
+.context-menu-icon {
+  font-size: 10px;
+  color: #666;
+  margin-left: 16px;
+}
+
+.context-menu-item:hover .context-menu-icon {
+  color: var(--primary-dim);
+}
+
+.context-menu-separator {
+  height: 1px;
+  background: var(--primary-dim);
+  margin: 4px 8px;
+}
