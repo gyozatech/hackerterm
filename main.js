@@ -1,7 +1,18 @@
-const { app, BrowserWindow, ipcMain, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, nativeImage, systemPreferences } = require('electron');
 const path = require('path');
 const os = require('os');
+const fs = require('fs');
+const https = require('https');
 const pty = require('node-pty');
+
+// Whisper model management
+const MODELS_DIR = path.join(__dirname, 'models');
+const MODEL_FILE = 'ggml-base.en.bin';
+const MODEL_PATH = path.join(MODELS_DIR, MODEL_FILE);
+const MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin';
+
+let whisperInstance = null;
+let WhisperModule = null;
 
 // Set app name
 app.setName('HackerTerm');
@@ -141,6 +152,146 @@ ipcMain.on('window-maximize', () => {
 
 ipcMain.on('window-close', () => {
   if (mainWindow) mainWindow.close();
+});
+
+// ========================================
+// SPEECH-TO-TEXT IPC HANDLERS
+// ========================================
+
+// Check if model exists
+ipcMain.handle('stt-check-model', () => {
+  return fs.existsSync(MODEL_PATH);
+});
+
+// Get model path
+ipcMain.handle('stt-get-model-path', () => {
+  return MODEL_PATH;
+});
+
+// Download model with progress
+ipcMain.handle('stt-download-model', async () => {
+  // Ensure models directory exists
+  if (!fs.existsSync(MODELS_DIR)) {
+    fs.mkdirSync(MODELS_DIR, { recursive: true });
+  }
+
+  return new Promise((resolve, reject) => {
+    const tempPath = MODEL_PATH + '.tmp';
+    const file = fs.createWriteStream(tempPath);
+
+    const downloadWithRedirect = (url) => {
+      https.get(url, (response) => {
+        // Handle redirects
+        if (response.statusCode === 301 || response.statusCode === 302) {
+          const redirectUrl = response.headers.location;
+          downloadWithRedirect(redirectUrl);
+          return;
+        }
+
+        if (response.statusCode !== 200) {
+          reject(new Error(`Failed to download: ${response.statusCode}`));
+          return;
+        }
+
+        const totalSize = parseInt(response.headers['content-length'], 10);
+        let downloadedSize = 0;
+
+        response.on('data', (chunk) => {
+          downloadedSize += chunk.length;
+          file.write(chunk);
+
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            const progress = Math.round((downloadedSize / totalSize) * 100);
+            mainWindow.webContents.send('stt-download-progress', { progress, downloadedSize, totalSize });
+          }
+        });
+
+        response.on('end', () => {
+          file.end();
+          // Rename temp file to final path
+          fs.renameSync(tempPath, MODEL_PATH);
+          resolve(true);
+        });
+
+        response.on('error', (err) => {
+          file.destroy();
+          fs.unlinkSync(tempPath);
+          reject(err);
+        });
+      }).on('error', (err) => {
+        file.destroy();
+        if (fs.existsSync(tempPath)) {
+          fs.unlinkSync(tempPath);
+        }
+        reject(err);
+      });
+    };
+
+    downloadWithRedirect(MODEL_URL);
+  });
+});
+
+// Load Whisper model
+ipcMain.handle('stt-load-model', async () => {
+  if (!fs.existsSync(MODEL_PATH)) {
+    throw new Error('Model not found');
+  }
+
+  try {
+    if (!WhisperModule) {
+      WhisperModule = require('@napi-rs/whisper');
+    }
+    const modelBuffer = fs.readFileSync(MODEL_PATH);
+    whisperInstance = new WhisperModule.Whisper(modelBuffer);
+    return true;
+  } catch (err) {
+    throw new Error(`Failed to load model: ${err.message}`);
+  }
+});
+
+// Transcribe audio
+ipcMain.handle('stt-transcribe', async (event, audioData) => {
+  if (!whisperInstance || !WhisperModule) {
+    throw new Error('Model not loaded');
+  }
+
+  try {
+    // audioData is an array of PCM samples at 16kHz
+    const pcmData = new Float32Array(audioData);
+
+    // Create params for transcription
+    const params = new WhisperModule.WhisperFullParams(WhisperModule.WhisperSamplingStrategy.Greedy);
+    params.language = 'en';
+    params.printProgress = false;
+    params.singleSegment = true;
+
+    // whisper.full() is SYNCHRONOUS and returns the transcribed text directly
+    const result = whisperInstance.full(params, pcmData);
+
+    return (result || '').trim();
+  } catch (err) {
+    throw new Error(`Transcription failed: ${err.message}`);
+  }
+});
+
+// Check if model is loaded
+ipcMain.handle('stt-is-loaded', () => {
+  return whisperInstance !== null;
+});
+
+// Check microphone permission (macOS)
+ipcMain.handle('stt-check-mic-permission', async () => {
+  if (process.platform === 'darwin') {
+    const status = systemPreferences.getMediaAccessStatus('microphone');
+
+    if (status === 'not-determined') {
+      // Request permission
+      const granted = await systemPreferences.askForMediaAccess('microphone');
+      return granted ? 'granted' : 'denied';
+    }
+    return status;
+  }
+  return 'granted'; // Non-macOS platforms
 });
 
 app.whenReady().then(createWindow);

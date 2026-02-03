@@ -195,6 +195,75 @@ body {
 }
 
 /* ========================================
+   MICROPHONE BUTTON
+   ======================================== */
+
+.mic-btn {
+  background: transparent;
+  border: none;
+  color: var(--primary-color);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  opacity: 0.7;
+  -webkit-app-region: no-drag;
+}
+
+.mic-btn:hover {
+  opacity: 1;
+  background: rgba(0, 255, 136, 0.1);
+  filter: drop-shadow(0 0 5px var(--primary-glow));
+}
+
+.mic-btn svg {
+  filter: drop-shadow(0 0 3px var(--primary-glow));
+}
+
+.mic-btn.recording {
+  opacity: 1;
+  color: var(--alert-color);
+  animation: mic-pulse 1s ease-in-out infinite;
+}
+
+.mic-btn.recording svg {
+  filter: drop-shadow(0 0 8px var(--alert-color));
+}
+
+.mic-btn.processing {
+  opacity: 0.6;
+  animation: mic-processing 0.5s ease-in-out infinite;
+}
+
+.mic-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+@keyframes mic-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 0, 68, 0.4);
+  }
+  50% {
+    transform: scale(1.1);
+    box-shadow: 0 0 0 8px rgba(255, 0, 68, 0);
+  }
+}
+
+@keyframes mic-processing {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ========================================
    SETTINGS PANEL
    ======================================== */
 
@@ -392,6 +461,86 @@ body {
   min-width: 35px;
   text-align: right;
   text-shadow: 0 0 5px var(--primary-glow);
+}
+
+/* Speech-to-Text Settings */
+.stt-model-status {
+  color: var(--primary-color);
+  font-size: 11px;
+  text-shadow: 0 0 5px var(--primary-glow);
+  font-family: 'Share Tech Mono', monospace;
+  letter-spacing: 1px;
+}
+
+.stt-model-status.loaded {
+  color: var(--primary-color);
+  text-shadow: 0 0 5px var(--primary-glow);
+}
+
+.stt-model-status.loading {
+  color: var(--warning-color);
+  text-shadow: 0 0 5px var(--warning-color);
+  animation: status-pulse 1s ease-in-out infinite;
+}
+
+.stt-model-status.error {
+  color: var(--alert-color);
+  text-shadow: 0 0 5px var(--alert-color);
+}
+
+.stt-download-btn {
+  width: 100%;
+  padding: 8px 12px;
+  background: #0d0d0d;
+  border: 1px solid var(--primary-dim);
+  border-radius: 2px;
+  color: var(--primary-color);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: 'Share Tech Mono', monospace;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.stt-download-btn:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+
+.stt-download-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.stt-progress-row {
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stt-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #0d0d0d;
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--primary-dim);
+}
+
+.stt-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--primary-color);
+  box-shadow: 0 0 10px var(--primary-glow);
+  transition: width 0.2s;
+}
+
+.stt-progress-text {
+  color: var(--primary-color);
+  font-size: 10px;
+  text-align: center;
+  text-shadow: 0 0 5px var(--primary-glow);
+  letter-spacing: 1px;
 }
 
 /* Shortcuts */

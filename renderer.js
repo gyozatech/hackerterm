@@ -26,6 +26,7 @@ const defaultShortcuts = {
   'pane.focusRight': 'Ctrl+Alt+Right',
   'dataPanel.toggle': 'Ctrl+Shift+P',
   'settings.open': 'Ctrl+,',
+  'stt.toggle': 'Ctrl+Shift+S',
 };
 
 const shortcutLabels = {
@@ -43,6 +44,7 @@ const shortcutLabels = {
   'pane.focusRight': 'Focus Pane Right',
   'dataPanel.toggle': 'Toggle Data Panel',
   'settings.open': 'Open Settings',
+  'stt.toggle': 'Speech-to-Text',
 };
 
 const defaultSettings = {
@@ -560,6 +562,286 @@ class KeySoundManager {
 }
 
 // ========================================
+// SPEECH-TO-TEXT MANAGER
+// ========================================
+
+class SpeechToTextManager {
+  constructor() {
+    this.isRecording = false;
+    this.isProcessing = false;
+    this.isModelLoaded = false;
+    this.mediaStream = null;
+    this.audioContext = null;
+    this.audioWorklet = null;
+    this.recordedChunks = [];
+
+    this.micBtn = null;
+    this.statusEl = null;
+    this.downloadBtn = null;
+    this.downloadRow = null;
+    this.progressRow = null;
+    this.progressFill = null;
+    this.progressText = null;
+
+    // Listen for download progress
+    ipcRenderer.on('stt-download-progress', (event, { progress }) => {
+      this.updateDownloadProgress(progress);
+    });
+  }
+
+  async init() {
+    this.micBtn = document.getElementById('mic-btn');
+    this.statusEl = document.getElementById('stt-model-status');
+    this.downloadBtn = document.getElementById('stt-download-btn');
+    this.downloadRow = document.getElementById('stt-download-row');
+    this.progressRow = document.getElementById('stt-progress-row');
+    this.progressFill = document.getElementById('stt-progress-fill');
+    this.progressText = document.getElementById('stt-progress-text');
+
+    if (!this.micBtn) return;
+
+    // Set up button click handler
+    this.micBtn.addEventListener('click', () => this.toggleRecording());
+
+    // Set up download button
+    if (this.downloadBtn) {
+      this.downloadBtn.addEventListener('click', () => this.downloadModel());
+    }
+
+    // Check if model exists and load it
+    await this.checkAndLoadModel();
+  }
+
+  async checkAndLoadModel() {
+    try {
+      const modelExists = await ipcRenderer.invoke('stt-check-model');
+
+      if (modelExists) {
+        this.updateStatus('LOADING...', 'loading');
+        if (this.downloadRow) this.downloadRow.style.display = 'none';
+
+        try {
+          await ipcRenderer.invoke('stt-load-model');
+          this.isModelLoaded = true;
+          this.updateStatus('ONLINE', 'loaded');
+          this.micBtn.disabled = false;
+        } catch (err) {
+          this.updateStatus('ERROR', 'error');
+          console.error('Failed to load Whisper model:', err);
+        }
+      } else {
+        this.updateStatus('OFFLINE', '');
+        this.micBtn.disabled = true;
+        if (this.downloadRow) this.downloadRow.style.display = 'flex';
+      }
+    } catch (err) {
+      this.updateStatus('ERROR', 'error');
+      console.error('Error checking model:', err);
+    }
+  }
+
+  updateStatus(text, className) {
+    if (this.statusEl) {
+      this.statusEl.textContent = text;
+      this.statusEl.className = 'stt-model-status';
+      if (className) {
+        this.statusEl.classList.add(className);
+      }
+    }
+  }
+
+  async downloadModel() {
+    if (!this.downloadBtn) return;
+
+    this.downloadBtn.disabled = true;
+    this.downloadBtn.textContent = 'DOWNLOADING...';
+    this.updateStatus('DOWNLOADING...', 'loading');
+
+    if (this.downloadRow) this.downloadRow.style.display = 'none';
+    if (this.progressRow) this.progressRow.style.display = 'flex';
+
+    try {
+      await ipcRenderer.invoke('stt-download-model');
+      this.updateDownloadProgress(100);
+
+      // Load the model after download
+      this.updateStatus('LOADING...', 'loading');
+      await ipcRenderer.invoke('stt-load-model');
+
+      this.isModelLoaded = true;
+      this.updateStatus('ONLINE', 'loaded');
+      this.micBtn.disabled = false;
+
+      if (this.progressRow) this.progressRow.style.display = 'none';
+    } catch (err) {
+      this.updateStatus('DOWNLOAD FAILED', 'error');
+      this.downloadBtn.disabled = false;
+      this.downloadBtn.textContent = 'RETRY DOWNLOAD';
+      if (this.downloadRow) this.downloadRow.style.display = 'flex';
+      if (this.progressRow) this.progressRow.style.display = 'none';
+      console.error('Failed to download model:', err);
+    }
+  }
+
+  updateDownloadProgress(progress) {
+    if (this.progressFill) {
+      this.progressFill.style.width = `${progress}%`;
+    }
+    if (this.progressText) {
+      this.progressText.textContent = `${progress}%`;
+    }
+  }
+
+  async toggleRecording() {
+    if (this.isProcessing) return;
+
+    if (this.isRecording) {
+      await this.stopRecording();
+    } else {
+      await this.startRecording();
+    }
+  }
+
+  async startRecording() {
+    if (!this.isModelLoaded) {
+      console.log('Model not loaded');
+      return;
+    }
+
+    try {
+      // Check microphone permission on macOS first
+      console.log('Checking microphone permission...');
+      const micStatus = await ipcRenderer.invoke('stt-check-mic-permission');
+      console.log('Microphone permission status:', micStatus);
+
+      if (micStatus === 'denied') {
+        this.updateStatus('MIC DENIED', 'error');
+        alert('Microphone access denied.\n\nPlease grant microphone permission:\n1. Open System Settings > Privacy & Security > Microphone\n2. Enable access for HackerTerm or Electron');
+        return;
+      }
+
+      console.log('Requesting microphone access...');
+
+      // Request microphone permission
+      this.mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+        }
+      });
+
+      console.log('Microphone access granted, starting recording...');
+
+      // Create audio context for processing
+      this.audioContext = new AudioContext({ sampleRate: 16000 });
+      const source = this.audioContext.createMediaStreamSource(this.mediaStream);
+
+      // Create a script processor to capture audio data
+      const bufferSize = 4096;
+      const processor = this.audioContext.createScriptProcessor(bufferSize, 1, 1);
+
+      this.recordedChunks = [];
+
+      processor.onaudioprocess = (e) => {
+        if (this.isRecording) {
+          const inputData = e.inputBuffer.getChannelData(0);
+          // Copy the data since the buffer gets reused
+          this.recordedChunks.push(new Float32Array(inputData));
+        }
+      };
+
+      source.connect(processor);
+      processor.connect(this.audioContext.destination);
+
+      this.processor = processor;
+      this.source = source;
+
+      this.isRecording = true;
+      this.micBtn.classList.add('recording');
+      this.micBtn.title = 'Click to stop recording';
+
+    } catch (err) {
+      console.error('Failed to start recording:', err);
+      this.updateStatus('MIC ERROR', 'error');
+
+      if (err.name === 'NotAllowedError' || err.name === 'NotFoundError') {
+        alert('Microphone access denied.\n\nPlease grant microphone permission:\n1. Open System Preferences > Privacy & Security > Microphone\n2. Enable access for Electron or Terminal');
+      } else {
+        alert('Microphone error: ' + err.message);
+      }
+    }
+  }
+
+  async stopRecording() {
+    if (!this.isRecording) return;
+
+    this.isRecording = false;
+    this.micBtn.classList.remove('recording');
+    this.micBtn.classList.add('processing');
+    this.isProcessing = true;
+    this.micBtn.title = 'Processing...';
+
+    // Stop the media stream
+    if (this.processor) {
+      this.processor.disconnect();
+      this.processor = null;
+    }
+    if (this.source) {
+      this.source.disconnect();
+      this.source = null;
+    }
+    if (this.mediaStream) {
+      this.mediaStream.getTracks().forEach(track => track.stop());
+      this.mediaStream = null;
+    }
+    if (this.audioContext) {
+      await this.audioContext.close();
+      this.audioContext = null;
+    }
+
+    // Combine all recorded chunks
+    const totalLength = this.recordedChunks.reduce((acc, chunk) => acc + chunk.length, 0);
+    const audioData = new Float32Array(totalLength);
+    let offset = 0;
+    for (const chunk of this.recordedChunks) {
+      audioData.set(chunk, offset);
+      offset += chunk.length;
+    }
+    this.recordedChunks = [];
+
+    // Only transcribe if we have audio data
+    if (audioData.length > 0) {
+      try {
+        const result = await ipcRenderer.invoke('stt-transcribe', Array.from(audioData));
+
+        // Send transcribed text to focused terminal
+        if (result && result.trim()) {
+          this.sendToTerminal(result.trim());
+        }
+      } catch (err) {
+        console.error('Transcription failed:', err);
+      }
+    }
+
+    this.micBtn.classList.remove('processing');
+    this.isProcessing = false;
+    this.micBtn.title = 'Speech-to-Text (Ctrl+Shift+S)';
+  }
+
+  sendToTerminal(text) {
+    const focusedPane = paneManager.getFocusedPane();
+    if (focusedPane) {
+      ipcRenderer.send('terminal-input', {
+        terminalId: focusedPane.terminalId,
+        data: text
+      });
+    }
+  }
+}
+
+// ========================================
 // PANE MANAGER
 // ========================================
 
@@ -754,6 +1036,7 @@ class PaneManager {
     // Context menu handler
     terminalWrapper.addEventListener('contextmenu', (e) => {
       e.preventDefault();
+      e.stopPropagation(); // Prevent document listener from hiding the menu
       if (contextMenu) {
         contextMenu.show(e.clientX, e.clientY, terminal, terminalId);
       }
@@ -1669,6 +1952,7 @@ let glitchManager;
 let waveformRenderer;
 let statusFooter;
 let cityMapRenderer;
+let speechToTextManager;
 
 // ========================================
 // CLOCK UPDATE
@@ -2096,6 +2380,15 @@ document.addEventListener('DOMContentLoaded', async () => {
           syncSettingsUI();
         }
       });
+      shortcutManager.registerAction('stt.toggle', () => {
+        if (speechToTextManager) {
+          speechToTextManager.toggleRecording();
+        }
+      });
+
+      // Initialize speech-to-text
+      speechToTextManager = new SpeechToTextManager();
+      speechToTextManager.init();
 
       // Initialize globe
       globeRenderer = new GlobeRenderer('globe-canvas');
