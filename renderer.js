@@ -989,6 +989,7 @@ class PaneManager {
       macOptionIsMeta: true,
       macOptionClickForcesSelection: false,
       altSendsMeta: true,
+      wordSeparator: ' \t\n()[]{}\\\'",`|&;<>=$~!@#%^*+?:',
     };
   }
 
