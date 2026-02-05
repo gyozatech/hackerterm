@@ -27,7 +27,7 @@ if (process.platform === 'darwin') {
 }
 
 let mainWindow;
-// Multi-PTY management: Map<terminalId, ptyProcess>
+// Multi-PTY management: Map<terminalId, { pty, webContents }>
 const ptyProcesses = new Map();
 let terminalIdCounter = 0;
 
@@ -52,7 +52,7 @@ function createWindow() {
 }
 
 // Create a new PTY process and return its ID
-function createPtyProcess(initialCwd = null) {
+function createPtyProcess(initialCwd = null, webContents = null) {
   const homeDir = os.homedir();
   const terminalId = ++terminalIdCounter;
   const cwd = initialCwd || homeDir;
@@ -72,35 +72,37 @@ function createPtyProcess(initialCwd = null) {
   });
 
   ptyProcess.onData((data) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('terminal-data', { terminalId, data });
+    const entry = ptyProcesses.get(terminalId);
+    if (entry && entry.webContents && !entry.webContents.isDestroyed()) {
+      entry.webContents.send('terminal-data', { terminalId, data });
     }
   });
 
   ptyProcess.onExit(({ exitCode }) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('terminal-exit', { terminalId, exitCode });
+    const entry = ptyProcesses.get(terminalId);
+    if (entry && entry.webContents && !entry.webContents.isDestroyed()) {
+      entry.webContents.send('terminal-exit', { terminalId, exitCode });
     }
     ptyProcesses.delete(terminalId);
   });
 
-  ptyProcesses.set(terminalId, ptyProcess);
+  ptyProcesses.set(terminalId, { pty: ptyProcess, webContents });
   return terminalId;
 }
 
 // Create new terminal (optionally with a specific cwd)
 ipcMain.handle('terminal-create', (event, cwd = null) => {
-  return createPtyProcess(cwd);
+  return createPtyProcess(cwd, event.sender);
 });
 
 // Get the current working directory of a terminal
 ipcMain.handle('terminal-get-cwd', async (event, terminalId) => {
-  const ptyProcess = ptyProcesses.get(terminalId);
-  if (!ptyProcess) return null;
+  const entry = ptyProcesses.get(terminalId);
+  if (!entry) return null;
 
   try {
     // Get the pid of the pty process
-    const pid = ptyProcess.pid;
+    const pid = entry.pty.pid;
     // Use lsof to get the cwd of the shell process
     const { execSync } = require('child_process');
     const output = execSync(`lsof -p ${pid} -a -d cwd -Fn 2>/dev/null | grep ^n | cut -c2-`, { encoding: 'utf8' });
@@ -113,26 +115,26 @@ ipcMain.handle('terminal-get-cwd', async (event, terminalId) => {
 
 // Destroy terminal by ID
 ipcMain.on('terminal-destroy', (event, terminalId) => {
-  const ptyProcess = ptyProcesses.get(terminalId);
-  if (ptyProcess) {
-    ptyProcess.kill();
+  const entry = ptyProcesses.get(terminalId);
+  if (entry) {
+    entry.pty.kill();
     ptyProcesses.delete(terminalId);
   }
 });
 
 // Terminal input - now takes { terminalId, data }
 ipcMain.on('terminal-input', (event, { terminalId, data }) => {
-  const ptyProcess = ptyProcesses.get(terminalId);
-  if (ptyProcess) {
-    ptyProcess.write(data);
+  const entry = ptyProcesses.get(terminalId);
+  if (entry) {
+    entry.pty.write(data);
   }
 });
 
 // Terminal resize - now takes { terminalId, cols, rows }
 ipcMain.on('terminal-resize', (event, { terminalId, cols, rows }) => {
-  const ptyProcess = ptyProcesses.get(terminalId);
-  if (ptyProcess) {
-    ptyProcess.resize(cols, rows);
+  const entry = ptyProcesses.get(terminalId);
+  if (entry) {
+    entry.pty.resize(cols, rows);
   }
 });
 
@@ -152,6 +154,10 @@ ipcMain.on('window-maximize', () => {
 
 ipcMain.on('window-close', () => {
   if (mainWindow) mainWindow.close();
+});
+
+ipcMain.on('window-new', () => {
+  createWindow();
 });
 
 // ========================================
@@ -298,8 +304,8 @@ app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
   // Kill all PTY processes
-  for (const ptyProcess of ptyProcesses.values()) {
-    ptyProcess.kill();
+  for (const entry of ptyProcesses.values()) {
+    entry.pty.kill();
   }
   ptyProcesses.clear();
   app.quit();

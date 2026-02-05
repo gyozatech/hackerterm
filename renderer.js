@@ -12,6 +12,7 @@ const os = require('os');
 const settingsPath = path.join(os.homedir(), '.hackerterm-settings.json');
 
 const defaultShortcuts = {
+  'window.new': 'Ctrl+N',
   'tab.new': 'Ctrl+T',
   'tab.close': 'Ctrl+W',
   'tab.next': 'Ctrl+Right',
@@ -30,6 +31,7 @@ const defaultShortcuts = {
 };
 
 const shortcutLabels = {
+  'window.new': 'New Window',
   'tab.new': 'New Tab',
   'tab.close': 'Close Tab',
   'tab.next': 'Next Tab',
@@ -1040,6 +1042,73 @@ class PaneManager {
       e.stopPropagation(); // Prevent document listener from hiding the menu
       if (contextMenu) {
         contextMenu.show(e.clientX, e.clientY, terminal, terminalId);
+      }
+    });
+
+    // Helper to detect if position is over a URL
+    const getUrlAtPosition = (col, row) => {
+      const buffer = terminal.buffer.active;
+      const lineIndex = buffer.viewportY + row;
+      const line = buffer.getLine(lineIndex);
+      if (!line) return null;
+
+      const lineText = line.translateToString();
+      const urlRegex = /https?:\/\/[^\s<>"')\]}>]+/g;
+      let match;
+      while ((match = urlRegex.exec(lineText)) !== null) {
+        const startCol = match.index;
+        const endCol = match.index + match[0].length;
+        if (col >= startCol && col < endCol) {
+          return match[0];
+        }
+      }
+      return null;
+    };
+
+    // Helper to get cell position from mouse event
+    const getCellPosition = (e) => {
+      const rect = terminalWrapper.getBoundingClientRect();
+      const cellWidth = rect.width / terminal.cols;
+      const cellHeight = rect.height / terminal.rows;
+      const col = Math.floor((e.clientX - rect.left) / cellWidth);
+      const row = Math.floor((e.clientY - rect.top) / cellHeight);
+      return { col, row };
+    };
+
+    // Ctrl+click to open links
+    terminalWrapper.addEventListener('click', (e) => {
+      const isMac = process.platform === 'darwin';
+      const modifierPressed = isMac ? e.metaKey : e.ctrlKey;
+      if (!modifierPressed) return;
+
+      const { col, row } = getCellPosition(e);
+      const url = getUrlAtPosition(col, row);
+      if (url) {
+        e.preventDefault();
+        e.stopPropagation();
+        shell.openExternal(url);
+      }
+    });
+
+    // Change cursor to pointer when hovering over links with Ctrl/Cmd held
+    terminalWrapper.addEventListener('mousemove', (e) => {
+      const isMac = process.platform === 'darwin';
+      const modifierPressed = isMac ? e.metaKey : e.ctrlKey;
+
+      if (!modifierPressed) {
+        terminalWrapper.style.cursor = '';
+        return;
+      }
+
+      const { col, row } = getCellPosition(e);
+      const url = getUrlAtPosition(col, row);
+      terminalWrapper.style.cursor = url ? 'pointer' : '';
+    });
+
+    // Reset cursor when modifier key is released
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'Control' || e.key === 'Meta') {
+        terminalWrapper.style.cursor = '';
       }
     });
 
@@ -2344,6 +2413,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       await tabManager.createTab();
 
       // Register shortcut actions
+      shortcutManager.registerAction('window.new', () => ipcRenderer.send('window-new'));
       shortcutManager.registerAction('tab.new', () => tabManager.createTab());
       shortcutManager.registerAction('tab.close', () => tabManager.closeTab(tabManager.getActiveTabId()));
       shortcutManager.registerAction('tab.next', () => tabManager.nextTab());
