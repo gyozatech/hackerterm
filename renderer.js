@@ -286,27 +286,31 @@ class ClipboardHistoryPopup {
           this.hide();
           return;
         }
-        // Prevent other keys while popup is visible
-        if (e.key !== 'v' && e.key !== 'V' && !e.key.startsWith('Control') && !e.key.startsWith('Meta')) {
-          e.preventDefault();
-          e.stopPropagation();
-          return;
-        }
+        // Block all other keys while popup is visible
+        e.preventDefault();
+        e.stopPropagation();
+        return;
       }
 
-      // Detect Ctrl+V press to start hold timer
-      if ((e.key === 'v' || e.key === 'V') && (e.ctrlKey || e.metaKey) && !this.isVisible) {
-        if (!this.vKeyDown) {
-          this.vKeyDown = true;
+      // Detect Ctrl+V press
+      if ((e.key === 'v' || e.key === 'V') && (e.ctrlKey || e.metaKey)) {
+        // Always prevent default to stop terminal from pasting
+        e.preventDefault();
+        e.stopPropagation();
 
-          // Start hold timer
-          this.holdTimer = setTimeout(() => {
-            if (this.vKeyDown && this.clipboardHistory.length > 0) {
-              e.preventDefault();
-              this.show();
-            }
-          }, this.holdDelay);
+        // Ignore key repeat events
+        if (this.vKeyDown) {
+          return;
         }
+
+        this.vKeyDown = true;
+
+        // Start hold timer
+        this.holdTimer = setTimeout(() => {
+          if (this.vKeyDown && this.clipboardHistory.length > 0) {
+            this.show();
+          }
+        }, this.holdDelay);
       }
     }, true);
 
@@ -323,8 +327,13 @@ class ClipboardHistoryPopup {
           e.preventDefault();
           e.stopPropagation();
           this.confirmSelection();
+        } else if (this.vKeyDown) {
+          // Released before popup shown - do normal paste from system clipboard
+          const text = clipboard.readText();
+          if (text) {
+            this.pasteText(text);
+          }
         }
-        // If popup not visible and vKeyDown was true, normal paste already happened via terminal
 
         this.vKeyDown = false;
       }
