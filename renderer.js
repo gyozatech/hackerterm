@@ -168,6 +168,9 @@ class ContextMenu {
         if (this.currentTerminal.hasSelection()) {
           const selection = this.currentTerminal.getSelection();
           clipboard.writeText(selection);
+          if (clipboardHistory) {
+            clipboardHistory.add(selection);
+          }
         }
         break;
       case 'paste':
@@ -187,6 +190,276 @@ class ContextMenu {
 }
 
 let contextMenu = null;
+
+// ========================================
+// CLIPBOARD HISTORY
+// ========================================
+
+class ClipboardHistory {
+  constructor(maxItems = 10) {
+    this.items = [];
+    this.maxItems = maxItems;
+  }
+
+  add(text) {
+    if (!text || !text.trim()) return;
+
+    // Remove duplicate if exists
+    const existingIndex = this.items.indexOf(text);
+    if (existingIndex !== -1) {
+      this.items.splice(existingIndex, 1);
+    }
+
+    // Add to front
+    this.items.unshift(text);
+
+    // Trim to max
+    if (this.items.length > this.maxItems) {
+      this.items = this.items.slice(0, this.maxItems);
+    }
+  }
+
+  getAll() {
+    return [...this.items];
+  }
+
+  get(index) {
+    return this.items[index];
+  }
+
+  get length() {
+    return this.items.length;
+  }
+}
+
+class ClipboardHistoryPopup {
+  constructor(clipboardHistory, paneManager) {
+    this.clipboardHistory = clipboardHistory;
+    this.paneManager = paneManager;
+    this.popup = null;
+    this.selectedIndex = 0;
+    this.isVisible = false;
+    this.vKeyDown = false;
+    this.holdTimer = null;
+    this.holdDelay = 1000; // 1 second hold to show popup
+
+    this.createPopup();
+    this.setupKeyboardListeners();
+  }
+
+  createPopup() {
+    this.popup = document.createElement('div');
+    this.popup.className = 'clipboard-history-popup';
+    this.popup.innerHTML = `
+      <div class="clipboard-history-header">CLIPBOARD HISTORY</div>
+      <div class="clipboard-history-hint">↑↓ Navigate • Enter/Release V to paste • Esc to cancel</div>
+      <div class="clipboard-history-list"></div>
+    `;
+    document.body.appendChild(this.popup);
+  }
+
+  setupKeyboardListeners() {
+    document.addEventListener('keydown', (e) => {
+      // Handle popup navigation when visible
+      if (this.isVisible) {
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          e.stopPropagation();
+          this.selectPrevious();
+          return;
+        }
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          e.stopPropagation();
+          this.selectNext();
+          return;
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          this.confirmSelection();
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          this.hide();
+          return;
+        }
+        // Prevent other keys while popup is visible
+        if (e.key !== 'v' && e.key !== 'V' && !e.key.startsWith('Control') && !e.key.startsWith('Meta')) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+      }
+
+      // Detect Ctrl+V press to start hold timer
+      if ((e.key === 'v' || e.key === 'V') && (e.ctrlKey || e.metaKey) && !this.isVisible) {
+        if (!this.vKeyDown) {
+          this.vKeyDown = true;
+
+          // Start hold timer
+          this.holdTimer = setTimeout(() => {
+            if (this.vKeyDown && this.clipboardHistory.length > 0) {
+              e.preventDefault();
+              this.show();
+            }
+          }, this.holdDelay);
+        }
+      }
+    }, true);
+
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'v' || e.key === 'V') {
+        // Clear hold timer
+        if (this.holdTimer) {
+          clearTimeout(this.holdTimer);
+          this.holdTimer = null;
+        }
+
+        if (this.isVisible) {
+          // Release V while popup visible = confirm selection
+          e.preventDefault();
+          e.stopPropagation();
+          this.confirmSelection();
+        }
+        // If popup not visible and vKeyDown was true, normal paste already happened via terminal
+
+        this.vKeyDown = false;
+      }
+    }, true);
+  }
+
+  show() {
+    if (this.clipboardHistory.length === 0) return;
+
+    this.selectedIndex = 0;
+    this.renderList();
+    this.positionPopup();
+    this.popup.classList.add('visible');
+    this.isVisible = true;
+  }
+
+  hide() {
+    this.popup.classList.remove('visible');
+    this.isVisible = false;
+    this.selectedIndex = 0;
+
+    // Refocus terminal
+    const focusedPane = this.paneManager.getFocusedPane();
+    if (focusedPane) {
+      focusedPane.terminal.focus();
+    }
+  }
+
+  positionPopup() {
+    const focusedPane = this.paneManager.getFocusedPane();
+    if (!focusedPane) return;
+
+    const terminal = focusedPane.terminal;
+    const wrapper = focusedPane.element.querySelector('.terminal-wrapper');
+    if (!wrapper) return;
+
+    const buffer = terminal.buffer.active;
+    const rect = wrapper.getBoundingClientRect();
+    const cellWidth = rect.width / terminal.cols;
+    const cellHeight = rect.height / terminal.rows;
+
+    let x = rect.left + (buffer.cursorX * cellWidth);
+    let y = rect.top + ((buffer.cursorY + 1) * cellHeight);
+
+    // Adjust if popup would go off screen
+    const popupWidth = 350;
+    const popupHeight = Math.min(300, 80 + this.clipboardHistory.length * 32);
+
+    if (x + popupWidth > window.innerWidth) {
+      x = window.innerWidth - popupWidth - 10;
+    }
+    if (y + popupHeight > window.innerHeight) {
+      y = window.innerHeight - popupHeight - 10;
+    }
+    if (x < 10) x = 10;
+    if (y < 10) y = 10;
+
+    this.popup.style.left = `${x}px`;
+    this.popup.style.top = `${y}px`;
+  }
+
+  renderList() {
+    const list = this.popup.querySelector('.clipboard-history-list');
+    const items = this.clipboardHistory.getAll();
+
+    list.innerHTML = items.map((text, index) => {
+      const truncated = text.length > 50 ? text.substring(0, 47) + '...' : text;
+      const escaped = this.escapeHtml(truncated).replace(/\n/g, '↵');
+      const isSelected = index === this.selectedIndex;
+      return `<div class="clipboard-history-item ${isSelected ? 'selected' : ''}" data-index="${index}">
+        <span class="clipboard-history-number">${index + 1}.</span>
+        <span class="clipboard-history-text">${escaped}</span>
+      </div>`;
+    }).join('');
+
+    // Add click handlers
+    list.querySelectorAll('.clipboard-history-item').forEach(item => {
+      item.addEventListener('click', () => {
+        this.selectedIndex = parseInt(item.dataset.index);
+        this.confirmSelection();
+      });
+    });
+  }
+
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  selectNext() {
+    if (this.selectedIndex < this.clipboardHistory.length - 1) {
+      this.selectedIndex++;
+      this.renderList();
+      this.scrollToSelected();
+    }
+  }
+
+  selectPrevious() {
+    if (this.selectedIndex > 0) {
+      this.selectedIndex--;
+      this.renderList();
+      this.scrollToSelected();
+    }
+  }
+
+  scrollToSelected() {
+    const list = this.popup.querySelector('.clipboard-history-list');
+    const selected = list.querySelector('.clipboard-history-item.selected');
+    if (selected) {
+      selected.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }
+
+  confirmSelection() {
+    const text = this.clipboardHistory.get(this.selectedIndex);
+    if (text) {
+      this.pasteText(text);
+    }
+    this.hide();
+  }
+
+  pasteText(text) {
+    const focusedPane = this.paneManager.getFocusedPane();
+    if (focusedPane) {
+      ipcRenderer.send('terminal-input', {
+        terminalId: focusedPane.terminalId,
+        data: text
+      });
+    }
+  }
+}
+
+let clipboardHistory = null;
+let clipboardHistoryPopup = null;
 
 // ========================================
 // SHORTCUT MANAGER
@@ -2405,9 +2678,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       keySoundManager = new KeySoundManager();
       keySoundManager.init();
       contextMenu = new ContextMenu();
+      clipboardHistory = new ClipboardHistory();
       paneManager = new PaneManager(null);
       tabManager = new TabManager(paneManager);
       paneManager.tabManager = tabManager;
+      clipboardHistoryPopup = new ClipboardHistoryPopup(clipboardHistory, paneManager);
 
       // Create initial tab
       await tabManager.createTab();
