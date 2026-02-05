@@ -1297,9 +1297,13 @@ class PaneManager {
     container.appendChild(paneElement);
     terminal.open(terminalWrapper);
 
-    // Custom key handler for word navigation
+    // Custom key handler for word navigation and clipboard history
     terminal.attachCustomKeyEventHandler((e) => {
       const isMac = process.platform === 'darwin';
+      // Intercept Ctrl+V/Cmd+V to let clipboard history popup handle it
+      if (e.type === 'keydown' && (e.key === 'v' || e.key === 'V') && (e.ctrlKey || e.metaKey)) {
+        return false; // Prevent xterm from handling paste, let document listener handle it
+      }
       // Option+Left (macOS) or Ctrl+Left (others) -> word left
       if (e.type === 'keydown' && e.key === 'ArrowLeft' && ((isMac && e.altKey) || (!isMac && e.ctrlKey))) {
         ipcRenderer.send('terminal-input', { terminalId, data: '\x1bb' });
