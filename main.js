@@ -49,6 +49,18 @@ function createWindow() {
   });
 
   mainWindow.loadFile('index.html');
+
+  // Open DevTools with Cmd+Option+I (macOS) or Ctrl+Shift+I (others)
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown') {
+      const isMac = process.platform === 'darwin';
+      if ((isMac && input.meta && input.alt && input.key === 'i') ||
+          (!isMac && input.control && input.shift && input.key === 'I')) {
+        mainWindow.webContents.toggleDevTools();
+        event.preventDefault();
+      }
+    }
+  });
 }
 
 // Create a new PTY process and return its ID

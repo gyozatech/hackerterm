@@ -292,6 +292,21 @@ class ClipboardHistoryPopup {
         return;
       }
 
+      // Detect Ctrl+C/Cmd+C for copy - add to clipboard history
+      if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) {
+        const focusedPane = this.paneManager.getFocusedPane();
+        if (focusedPane && focusedPane.terminal.hasSelection()) {
+          const selection = focusedPane.terminal.getSelection();
+          if (selection) {
+            clipboard.writeText(selection);
+            this.clipboardHistory.add(selection);
+          }
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+      }
+
       // Detect Ctrl+V press
       if ((e.key === 'v' || e.key === 'V') && (e.ctrlKey || e.metaKey)) {
         // Always prevent default to stop terminal from pasting
@@ -1300,6 +1315,13 @@ class PaneManager {
     // Custom key handler for word navigation and clipboard history
     terminal.attachCustomKeyEventHandler((e) => {
       const isMac = process.platform === 'darwin';
+      // Intercept Ctrl+C/Cmd+C to let clipboard history capture it (only when there's a selection)
+      if (e.type === 'keydown' && (e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) {
+        if (terminal.hasSelection()) {
+          return false; // Prevent xterm from handling copy, let document listener handle it
+        }
+        // No selection - let Ctrl+C pass through as SIGINT
+      }
       // Intercept Ctrl+V/Cmd+V to let clipboard history popup handle it
       if (e.type === 'keydown' && (e.key === 'v' || e.key === 'V') && (e.ctrlKey || e.metaKey)) {
         return false; // Prevent xterm from handling paste, let document listener handle it
