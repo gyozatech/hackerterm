@@ -221,10 +221,24 @@ class ClipboardHistory {
   constructor(maxItems = 10) {
     this.items = [];
     this.maxItems = maxItems;
+    this.lastClipboardText = clipboard.readText() || '';
+    this.startPolling();
+  }
+
+  startPolling() {
+    setInterval(() => {
+      const current = clipboard.readText();
+      if (current && current !== this.lastClipboardText) {
+        this.lastClipboardText = current;
+        this.add(current);
+      }
+    }, 500);
   }
 
   add(text) {
     if (!text || !text.trim()) return;
+
+    this.lastClipboardText = text;
 
     // Remove duplicate if exists
     const existingIndex = this.items.indexOf(text);
