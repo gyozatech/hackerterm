@@ -664,6 +664,18 @@ body {
   text-shadow: 0 0 8px var(--primary-glow);
 }
 
+.tab.dragging {
+  opacity: 0.4;
+}
+
+.tab.drag-over-left {
+  box-shadow: inset 3px 0 0 0 var(--primary-color);
+}
+
+.tab.drag-over-right {
+  box-shadow: inset -3px 0 0 0 var(--primary-color);
+}
+
 .tab-title {
   flex: 1;
   overflow: hidden;

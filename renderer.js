@@ -1751,6 +1751,7 @@ class TabManager {
     this.tabs = new Map();
     this.tabIdCounter = 0;
     this.activeTabId = null;
+    this.draggedTabId = null;
 
     this.tabsContainer = document.getElementById('tabs-container');
     this.paneContainer = document.getElementById('pane-container');
@@ -1784,6 +1785,8 @@ class TabManager {
       this.closeTab(tabId);
     });
 
+    this.setupTabDragAndDrop(tabElement, tabId);
+
     this.tabsContainer.appendChild(tabElement);
 
     const contentElement = document.createElement('div');
@@ -1802,6 +1805,79 @@ class TabManager {
     this.switchTab(tabId);
 
     return tabId;
+  }
+
+  setupTabDragAndDrop(tabElement, tabId) {
+    tabElement.draggable = true;
+
+    tabElement.addEventListener('dragstart', (e) => {
+      // Prevent drag from close button
+      if (e.target.closest('.tab-close')) {
+        e.preventDefault();
+        return;
+      }
+      this.draggedTabId = tabId;
+      tabElement.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    tabElement.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (this.draggedTabId === null || this.draggedTabId === tabId) return;
+      e.dataTransfer.dropEffect = 'move';
+
+      const rect = tabElement.getBoundingClientRect();
+      const midX = rect.left + rect.width / 2;
+
+      tabElement.classList.remove('drag-over-left', 'drag-over-right');
+      if (e.clientX < midX) {
+        tabElement.classList.add('drag-over-left');
+      } else {
+        tabElement.classList.add('drag-over-right');
+      }
+    });
+
+    tabElement.addEventListener('dragleave', () => {
+      tabElement.classList.remove('drag-over-left', 'drag-over-right');
+    });
+
+    tabElement.addEventListener('drop', (e) => {
+      e.preventDefault();
+      tabElement.classList.remove('drag-over-left', 'drag-over-right');
+
+      if (this.draggedTabId === null || this.draggedTabId === tabId) return;
+
+      const draggedTab = this.tabs.get(this.draggedTabId);
+      if (!draggedTab) return;
+
+      const rect = tabElement.getBoundingClientRect();
+      const midX = rect.left + rect.width / 2;
+
+      if (e.clientX < midX) {
+        this.tabsContainer.insertBefore(draggedTab.element, tabElement);
+      } else {
+        this.tabsContainer.insertBefore(draggedTab.element, tabElement.nextSibling);
+      }
+
+      this.rebuildTabOrder();
+    });
+
+    tabElement.addEventListener('dragend', () => {
+      this.draggedTabId = null;
+      this.tabsContainer.querySelectorAll('.tab').forEach(t => {
+        t.classList.remove('dragging', 'drag-over-left', 'drag-over-right');
+      });
+    });
+  }
+
+  rebuildTabOrder() {
+    const newTabs = new Map();
+    this.tabsContainer.querySelectorAll('.tab').forEach(el => {
+      const id = parseInt(el.dataset.tabId);
+      const tab = this.tabs.get(id);
+      if (tab) newTabs.set(id, tab);
+    });
+    this.tabs = newTabs;
   }
 
   closeTab(tabId) {
