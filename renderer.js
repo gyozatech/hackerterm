@@ -1156,7 +1156,7 @@ class SpeechToTextManager {
 
         // Send transcribed text to focused terminal
         if (result && result.trim()) {
-          this.sendToTerminal(result.trim());
+          this.sendToTerminal(this.normalizeTranscription(result.trim()));
         }
       } catch (err) {
         console.error('Transcription failed:', err);
@@ -1166,6 +1166,86 @@ class SpeechToTextManager {
     this.micBtn.classList.remove('processing');
     this.isProcessing = false;
     this.micBtn.title = 'Speech-to-Text (Ctrl+Shift+S)';
+  }
+
+  normalizeTranscription(text) {
+    const replacements = [
+      [/\bcolumn sign\b/gi, ':'],
+      [/\bcolon sign\b/gi, ':'],
+      [/\bcolon\b/gi, ':'],
+      [/\bcomma sign\b/gi, ','],
+      [/\bcomma\b/gi, ','],
+      [/\bfull stop sign\b/gi, '.'],
+      [/\bfull stop\b/gi, '.'],
+      [/\bperiod sign\b/gi, '.'],
+      [/\bperiod\b/gi, '.'],
+      [/\bdot sign\b/gi, '.'],
+      [/\bdot\b/gi, '.'],
+      [/\bquestion mark sign\b/gi, '?'],
+      [/\bquestion mark\b/gi, '?'],
+      [/\bexclamation mark sign\b/gi, '!'],
+      [/\bexclamation mark\b/gi, '!'],
+      [/\bexclamation point\b/gi, '!'],
+      [/\bplus sign\b/gi, '+'],
+      [/\bminus sign\b/gi, '-'],
+      [/\bdash sign\b/gi, '-'],
+      [/\bhyphen sign\b/gi, '-'],
+      [/\bhyphen\b/gi, '-'],
+      [/\bunderscore sign\b/gi, '_'],
+      [/\bunderscore\b/gi, '_'],
+      [/\bequals sign\b/gi, '='],
+      [/\bequal sign\b/gi, '='],
+      [/\bat sign\b/gi, '@'],
+      [/\bhash sign\b/gi, '#'],
+      [/\bhashtag sign\b/gi, '#'],
+      [/\bhashtag\b/gi, '#'],
+      [/\bdollar sign\b/gi, '$'],
+      [/\bpercent sign\b/gi, '%'],
+      [/\bampersand sign\b/gi, '&'],
+      [/\bampersand\b/gi, '&'],
+      [/\basterisk sign\b/gi, '*'],
+      [/\basterisk\b/gi, '*'],
+      [/\bstar sign\b/gi, '*'],
+      [/\bslash sign\b/gi, '/'],
+      [/\bforward slash\b/gi, '/'],
+      [/\bslash\b/gi, '/'],
+      [/\bbackslash sign\b/gi, '\\'],
+      [/\bbackslash\b/gi, '\\'],
+      [/\bpipe sign\b/gi, '|'],
+      [/\bpipe\b/gi, '|'],
+      [/\btilde sign\b/gi, '~'],
+      [/\btilde\b/gi, '~'],
+      [/\bcaret sign\b/gi, '^'],
+      [/\bcaret\b/gi, '^'],
+      [/\bsemicolon sign\b/gi, ';'],
+      [/\bsemicolon\b/gi, ';'],
+      [/\bopen parenthesis\b/gi, '('],
+      [/\bclose parenthesis\b/gi, ')'],
+      [/\bopen bracket\b/gi, '['],
+      [/\bclose bracket\b/gi, ']'],
+      [/\bopen brace\b/gi, '{'],
+      [/\bclose brace\b/gi, '}'],
+      [/\bopen angle bracket\b/gi, '<'],
+      [/\bclose angle bracket\b/gi, '>'],
+      [/\bless than sign\b/gi, '<'],
+      [/\bless than\b/gi, '<'],
+      [/\bgreater than sign\b/gi, '>'],
+      [/\bgreater than\b/gi, '>'],
+      [/\bdouble quote\b/gi, '"'],
+      [/\bsingle quote\b/gi, "'"],
+      [/\bapostrophe\b/gi, "'"],
+      [/\bnew line\b/gi, '\n'],
+      [/\btab sign\b/gi, '\t'],
+      [/\bspace sign\b/gi, ' '],
+    ];
+
+    let result = text;
+    for (const [pattern, replacement] of replacements) {
+      result = result.replace(pattern, replacement);
+    }
+    // Clean up extra spaces around punctuation
+    result = result.replace(/ +([,:;.?!])/g, '$1');
+    return result;
   }
 
   sendToTerminal(text) {
