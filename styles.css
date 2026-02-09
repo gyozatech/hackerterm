@@ -800,6 +800,36 @@ body {
   background: var(--primary-color);
 }
 
+/* Pane close button */
+.pane-close-btn {
+  display: none;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-dim);
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 2px;
+  cursor: pointer;
+  z-index: 5;
+  transition: all 0.15s;
+  opacity: 0;
+}
+
+.pane:hover .pane-close-btn {
+  opacity: 1;
+}
+
+.pane-close-btn:hover {
+  color: var(--alert-color);
+  background: rgba(0, 0, 0, 0.8);
+}
+
 .pane .xterm {
   height: 100%;
 }

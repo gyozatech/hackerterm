@@ -102,6 +102,7 @@ class ContextMenu {
     this.menu = null;
     this.currentTerminal = null;
     this.currentTerminalId = null;
+    this.currentPaneId = null;
     this.createMenu();
   }
 
@@ -122,6 +123,15 @@ class ContextMenu {
         <span>Clear</span>
         <span class="context-menu-icon">⌘K</span>
       </div>
+      <div class="context-menu-separator"></div>
+      <div class="context-menu-item" data-action="split-vertical">
+        <span>Split Vertical</span>
+        <span class="context-menu-icon">┃</span>
+      </div>
+      <div class="context-menu-item" data-action="split-horizontal">
+        <span>Split Horizontal</span>
+        <span class="context-menu-icon">━</span>
+      </div>
     `;
     document.body.appendChild(this.menu);
 
@@ -136,9 +146,10 @@ class ContextMenu {
     document.addEventListener('contextmenu', () => this.hide());
   }
 
-  show(x, y, terminal, terminalId) {
+  show(x, y, terminal, terminalId, paneId) {
     this.currentTerminal = terminal;
     this.currentTerminalId = terminalId;
+    this.currentPaneId = paneId;
 
     const hasSelection = terminal.hasSelection();
     const copyItem = this.menu.querySelector('[data-action="copy"]');
@@ -146,8 +157,8 @@ class ContextMenu {
       copyItem.classList.toggle('disabled', !hasSelection);
     }
 
-    const menuWidth = 150;
-    const menuHeight = 120;
+    const menuWidth = 180;
+    const menuHeight = 190;
     const adjustedX = x + menuWidth > window.innerWidth ? window.innerWidth - menuWidth - 10 : x;
     const adjustedY = y + menuHeight > window.innerHeight ? window.innerHeight - menuHeight - 10 : y;
 
@@ -158,6 +169,7 @@ class ContextMenu {
 
   hide() {
     this.menu.classList.remove('visible');
+    this.currentPaneId = null;
   }
 
   handleAction(action) {
@@ -182,10 +194,20 @@ class ContextMenu {
       case 'clear':
         this.currentTerminal.clear();
         break;
+      case 'split-vertical':
+        if (this.currentPaneId && paneManager) {
+          paneManager.splitPane(this.currentPaneId, 'vertical');
+        }
+        break;
+      case 'split-horizontal':
+        if (this.currentPaneId && paneManager) {
+          paneManager.splitPane(this.currentPaneId, 'horizontal');
+        }
+        break;
     }
 
     this.hide();
-    this.currentTerminal.focus();
+    if (this.currentTerminal) this.currentTerminal.focus();
   }
 }
 
@@ -1322,6 +1344,17 @@ class PaneManager {
     paneElement.className = 'pane';
     paneElement.dataset.paneId = paneId;
 
+    // Pane close button (visible only when multiple panes exist)
+    const paneCloseBtn = document.createElement('div');
+    paneCloseBtn.className = 'pane-close-btn';
+    paneCloseBtn.innerHTML = '&times;';
+    paneCloseBtn.title = 'Close pane';
+    paneCloseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.closePane(paneId);
+    });
+    paneElement.appendChild(paneCloseBtn);
+
     const terminalWrapper = document.createElement('div');
     terminalWrapper.className = 'terminal-wrapper';
     paneElement.appendChild(terminalWrapper);
@@ -1366,7 +1399,7 @@ class PaneManager {
       e.preventDefault();
       e.stopPropagation(); // Prevent document listener from hiding the menu
       if (contextMenu) {
-        contextMenu.show(e.clientX, e.clientY, terminal, terminalId);
+        contextMenu.show(e.clientX, e.clientY, terminal, terminalId, paneId);
       }
     });
 
@@ -1405,6 +1438,9 @@ class PaneManager {
       fitAddon,
       element: paneElement,
     });
+
+    // Update pane close button visibility for all panes in this tab
+    this.updatePaneCloseButtons(tabId);
 
     terminal.onData((data) => {
       ipcRenderer.send('terminal-input', { terminalId, data });
@@ -1578,6 +1614,18 @@ class PaneManager {
     }
 
     this.refitAllPanesInTab(pane.tabId);
+
+    // Update close button visibility
+    this.updatePaneCloseButtons(pane.tabId);
+  }
+
+  updatePaneCloseButtons(tabId) {
+    const tabPanes = this.getPanesForTab(tabId);
+    const showClose = tabPanes.length > 1;
+    tabPanes.forEach(p => {
+      const btn = p.element.querySelector('.pane-close-btn');
+      if (btn) btn.style.display = showClose ? 'flex' : 'none';
+    });
   }
 
   focusPane(paneId) {
