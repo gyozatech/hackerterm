@@ -241,7 +241,8 @@ class ClipboardHistoryPopup {
     this.isVisible = false;
     this.vKeyDown = false;
     this.holdTimer = null;
-    this.holdDelay = 1000; // 1 second hold to show popup
+    this.safetyTimer = null;
+    this.holdDelay = 500; // 500ms hold to show popup
 
     this.createPopup();
     this.setupKeyboardListeners();
@@ -252,7 +253,7 @@ class ClipboardHistoryPopup {
     this.popup.className = 'clipboard-history-popup';
     this.popup.innerHTML = `
       <div class="clipboard-history-header">CLIPBOARD HISTORY</div>
-      <div class="clipboard-history-hint">↑↓ Navigate • Enter/Release V to paste • Esc to cancel</div>
+      <div class="clipboard-history-hint">↑↓ Navigate • Enter to paste • Esc to cancel</div>
       <div class="clipboard-history-list"></div>
     `;
     document.body.appendChild(this.popup);
@@ -309,9 +310,8 @@ class ClipboardHistoryPopup {
 
       // Detect Ctrl+V press
       if ((e.key === 'v' || e.key === 'V') && (e.ctrlKey || e.metaKey)) {
-        // Always prevent default to stop terminal from pasting
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
 
         // Ignore key repeat events
         if (this.vKeyDown) {
@@ -319,6 +319,13 @@ class ClipboardHistoryPopup {
         }
 
         this.vKeyDown = true;
+
+        // Safety timeout: force-reset state after 2s in case keyup is lost
+        if (this.safetyTimer) clearTimeout(this.safetyTimer);
+        this.safetyTimer = setTimeout(() => {
+          this.vKeyDown = false;
+          this.safetyTimer = null;
+        }, 2000);
 
         // Start hold timer
         this.holdTimer = setTimeout(() => {
@@ -330,27 +337,37 @@ class ClipboardHistoryPopup {
     }, true);
 
     document.addEventListener('keyup', (e) => {
-      if (e.key === 'v' || e.key === 'V') {
-        // Clear hold timer
-        if (this.holdTimer) {
-          clearTimeout(this.holdTimer);
-          this.holdTimer = null;
-        }
+      if (!this.vKeyDown) return;
 
-        if (this.isVisible) {
-          // Release V while popup visible = confirm selection
-          e.preventDefault();
-          e.stopPropagation();
-          this.confirmSelection();
-        } else if (this.vKeyDown) {
-          // Released before popup shown - do normal paste from system clipboard
-          const text = clipboard.readText();
-          if (text) {
-            this.pasteText(text);
-          }
-        }
+      const isVKey = e.key === 'v' || e.key === 'V' || e.code === 'KeyV';
+      const isModifier = e.key === 'Meta' || e.key === 'Control';
 
-        this.vKeyDown = false;
+      if (!isVKey && !isModifier) return;
+
+      e.preventDefault();
+      e.stopImmediatePropagation();
+
+      // Clear hold timer
+      if (this.holdTimer) {
+        clearTimeout(this.holdTimer);
+        this.holdTimer = null;
+      }
+      if (this.safetyTimer) {
+        clearTimeout(this.safetyTimer);
+        this.safetyTimer = null;
+      }
+
+      this.vKeyDown = false;
+
+      if (this.isVisible) {
+        // Popup is showing - let user navigate with arrows + Enter
+        return;
+      }
+
+      // Released before popup shown - do normal paste from system clipboard
+      const text = clipboard.readText();
+      if (text) {
+        this.pasteText(text);
       }
     }, true);
   }
