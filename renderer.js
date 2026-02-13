@@ -1460,9 +1460,28 @@ class PaneManager {
     let selAnchorX = null, selAnchorY = null;
     let selCurrentX = null, selCurrentY = null;
 
-    function getLineLength(viewportRow) {
+    function getLineText(viewportRow) {
       const line = terminal.buffer.active.getLine(terminal.buffer.active.baseY + viewportRow);
-      return line ? line.translateToString().trimEnd().length : 0;
+      return line ? line.translateToString() : '';
+    }
+
+    function getLineLength(viewportRow) {
+      return getLineText(viewportRow).trimEnd().length;
+    }
+
+    function wordBoundaryLeft(text, pos) {
+      let i = pos - 1;
+      while (i > 0 && /\s/.test(text[i])) i--;       // skip whitespace
+      while (i > 0 && /\S/.test(text[i - 1])) i--;    // skip word chars
+      return Math.max(0, i);
+    }
+
+    function wordBoundaryRight(text, pos) {
+      let i = pos;
+      const len = text.trimEnd().length;
+      while (i < len && /\S/.test(text[i])) i++;       // skip word chars
+      while (i < len && /\s/.test(text[i])) i++;        // skip whitespace
+      return i;
     }
 
     function applyShiftArrowSelection() {
@@ -1506,18 +1525,70 @@ class PaneManager {
       }
 
       // Option+Left (macOS) or Ctrl+Left (others) -> word left
-      if (e.type === 'keydown' && e.key === 'ArrowLeft' && ((isMac && e.altKey) || (!isMac && e.ctrlKey))) {
+      if (e.type === 'keydown' && e.key === 'ArrowLeft' && !e.shiftKey && ((isMac && e.altKey) || (!isMac && e.ctrlKey))) {
         ipcRenderer.send('terminal-input', { terminalId, data: '\x1bb' });
         return false;
       }
       // Option+Right (macOS) or Ctrl+Right (others) -> word right
-      if (e.type === 'keydown' && e.key === 'ArrowRight' && ((isMac && e.altKey) || (!isMac && e.ctrlKey))) {
+      if (e.type === 'keydown' && e.key === 'ArrowRight' && !e.shiftKey && ((isMac && e.altKey) || (!isMac && e.ctrlKey))) {
         ipcRenderer.send('terminal-input', { terminalId, data: '\x1bf' });
         return false;
       }
       // Option+Backspace (macOS) or Ctrl+Backspace (others) -> delete word
       if (e.type === 'keydown' && e.key === 'Backspace' && ((isMac && e.altKey) || (!isMac && e.ctrlKey))) {
         ipcRenderer.send('terminal-input', { terminalId, data: '\x17' });
+        return false;
+      }
+
+      // Shift+Option+Left (macOS) or Shift+Ctrl+Left (others) — select word left
+      if (e.type === 'keydown' && e.key === 'ArrowLeft' && e.shiftKey && ((isMac && e.altKey) || (!isMac && e.ctrlKey))) {
+        if (selAnchorX === null) {
+          selAnchorX = terminal.buffer.active.cursorX;
+          selAnchorY = terminal.buffer.active.cursorY;
+          selCurrentX = selAnchorX;
+          selCurrentY = selAnchorY;
+        }
+        selCurrentX = wordBoundaryLeft(getLineText(selAnchorY), selCurrentX);
+        applyShiftArrowSelection();
+        return false;
+      }
+
+      // Shift+Option+Right (macOS) or Shift+Ctrl+Right (others) — select word right
+      if (e.type === 'keydown' && e.key === 'ArrowRight' && e.shiftKey && ((isMac && e.altKey) || (!isMac && e.ctrlKey))) {
+        if (selAnchorX === null) {
+          selAnchorX = terminal.buffer.active.cursorX;
+          selAnchorY = terminal.buffer.active.cursorY;
+          selCurrentX = selAnchorX;
+          selCurrentY = selAnchorY;
+        }
+        selCurrentX = wordBoundaryRight(getLineText(selAnchorY), selCurrentX);
+        applyShiftArrowSelection();
+        return false;
+      }
+
+      // Shift+Cmd+Left (macOS) or Shift+Home (others) — select to start of line
+      if (e.type === 'keydown' && ((isMac && e.key === 'ArrowLeft' && e.shiftKey && e.metaKey) || (!isMac && e.key === 'Home' && e.shiftKey))) {
+        if (selAnchorX === null) {
+          selAnchorX = terminal.buffer.active.cursorX;
+          selAnchorY = terminal.buffer.active.cursorY;
+          selCurrentX = selAnchorX;
+          selCurrentY = selAnchorY;
+        }
+        selCurrentX = 0;
+        applyShiftArrowSelection();
+        return false;
+      }
+
+      // Shift+Cmd+Right (macOS) or Shift+End (others) — select to end of line
+      if (e.type === 'keydown' && ((isMac && e.key === 'ArrowRight' && e.shiftKey && e.metaKey) || (!isMac && e.key === 'End' && e.shiftKey))) {
+        if (selAnchorX === null) {
+          selAnchorX = terminal.buffer.active.cursorX;
+          selAnchorY = terminal.buffer.active.cursorY;
+          selCurrentX = selAnchorX;
+          selCurrentY = selAnchorY;
+        }
+        selCurrentX = getLineLength(selAnchorY);
+        applyShiftArrowSelection();
         return false;
       }
 
@@ -1547,8 +1618,8 @@ class PaneManager {
         return false;
       }
 
-      // Block keyup for Shift+Arrow to prevent secondary handling
-      if (e.type === 'keyup' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.shiftKey) {
+      // Block keyup for Shift+Arrow/Home/End to prevent secondary handling
+      if (e.type === 'keyup' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') && e.shiftKey) {
         return false;
       }
 
