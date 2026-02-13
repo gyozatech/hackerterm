@@ -1456,20 +1456,55 @@ class PaneManager {
     container.appendChild(paneElement);
     terminal.open(terminalWrapper);
 
-    // Custom key handler for word navigation and clipboard history
+    // Shift+Arrow selection state (per-pane)
+    let selAnchorX = null, selAnchorY = null;
+    let selCurrentX = null, selCurrentY = null;
+
+    function getLineLength(viewportRow) {
+      const line = terminal.buffer.active.getLine(terminal.buffer.active.baseY + viewportRow);
+      return line ? line.translateToString().trimEnd().length : 0;
+    }
+
+    function applyShiftArrowSelection() {
+      const minX = Math.min(selAnchorX, selCurrentX);
+      const maxX = Math.max(selAnchorX, selCurrentX);
+      const length = maxX - minX;
+      if (length <= 0) { terminal.clearSelection(); return; }
+      const absRow = terminal.buffer.active.baseY + selAnchorY;
+      terminal.select(minX, absRow, length);
+    }
+
+    function clearShiftArrowSelection() {
+      selAnchorX = selAnchorY = selCurrentX = selCurrentY = null;
+      terminal.clearSelection();
+    }
+
+    // Custom key handler for word navigation, clipboard history, and Shift+Arrow selection
     terminal.attachCustomKeyEventHandler((e) => {
       const isMac = process.platform === 'darwin';
-      // Intercept Ctrl+C/Cmd+C to let clipboard history capture it (only when there's a selection)
+
+      // Intercept Ctrl+C/Cmd+C to copy selection (Shift+Arrow or mouse)
       if (e.type === 'keydown' && (e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) {
         if (terminal.hasSelection()) {
-          return false; // Prevent xterm from handling copy, let document listener handle it
+          const selection = terminal.getSelection();
+          if (selection) {
+            clipboard.writeText(selection);
+            if (clipboardHistory) clipboardHistory.add(selection);
+          }
+          if (selAnchorX !== null) {
+            selAnchorX = selAnchorY = selCurrentX = selCurrentY = null;
+          }
+          terminal.clearSelection();
+          return false;
         }
         // No selection - let Ctrl+C pass through as SIGINT
       }
+
       // Intercept Ctrl+V/Cmd+V to let clipboard history popup handle it
       if (e.type === 'keydown' && (e.key === 'v' || e.key === 'V') && (e.ctrlKey || e.metaKey)) {
         return false; // Prevent xterm from handling paste, let document listener handle it
       }
+
       // Option+Left (macOS) or Ctrl+Left (others) -> word left
       if (e.type === 'keydown' && e.key === 'ArrowLeft' && ((isMac && e.altKey) || (!isMac && e.ctrlKey))) {
         ipcRenderer.send('terminal-input', { terminalId, data: '\x1bb' });
@@ -1485,6 +1520,44 @@ class PaneManager {
         ipcRenderer.send('terminal-input', { terminalId, data: '\x17' });
         return false;
       }
+
+      // Shift+ArrowLeft — select one character to the left
+      if (e.type === 'keydown' && e.key === 'ArrowLeft' && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        if (selAnchorX === null) {
+          selAnchorX = terminal.buffer.active.cursorX;
+          selAnchorY = terminal.buffer.active.cursorY;
+          selCurrentX = selAnchorX;
+          selCurrentY = selAnchorY;
+        }
+        selCurrentX = Math.max(0, selCurrentX - 1);
+        applyShiftArrowSelection();
+        return false;
+      }
+
+      // Shift+ArrowRight — select one character to the right
+      if (e.type === 'keydown' && e.key === 'ArrowRight' && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        if (selAnchorX === null) {
+          selAnchorX = terminal.buffer.active.cursorX;
+          selAnchorY = terminal.buffer.active.cursorY;
+          selCurrentX = selAnchorX;
+          selCurrentY = selAnchorY;
+        }
+        selCurrentX = Math.min(getLineLength(selAnchorY), selCurrentX + 1);
+        applyShiftArrowSelection();
+        return false;
+      }
+
+      // Block keyup for Shift+Arrow to prevent secondary handling
+      if (e.type === 'keyup' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.shiftKey) {
+        return false;
+      }
+
+      // Clear Shift+Arrow selection on any other keydown (but not modifier-only keys)
+      const isModifierOnly = ['Shift', 'Control', 'Alt', 'Meta'].includes(e.key);
+      if (e.type === 'keydown' && selAnchorX !== null && !isModifierOnly) {
+        clearShiftArrowSelection();
+      }
+
       return true;
     });
 
@@ -1558,6 +1631,11 @@ class PaneManager {
 
     paneElement.addEventListener('click', () => {
       this.focusPane(paneId);
+    });
+
+    // Clear Shift+Arrow selection state on mouse interaction
+    terminalWrapper.addEventListener('mousedown', () => {
+      selAnchorX = selAnchorY = selCurrentX = selCurrentY = null;
     });
 
     setTimeout(() => {
