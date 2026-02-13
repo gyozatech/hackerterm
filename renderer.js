@@ -1498,9 +1498,217 @@ class PaneManager {
       terminal.clearSelection();
     }
 
+    // Browse mode state (per-pane)
+    let browseActive = false;
+    let browseX = 0, browseY = 0;
+    let browseAnchorX = null, browseAnchorY = null;
+    let browseCursorEl = null;
+
+    function getCellDimensions() {
+      const screen = terminalWrapper.querySelector('.xterm-screen');
+      if (!screen) return { width: 9, height: 17 };
+      const rect = screen.getBoundingClientRect();
+      return {
+        width: rect.width / terminal.cols,
+        height: rect.height / terminal.rows,
+      };
+    }
+
+    function createBrowseCursor() {
+      if (browseCursorEl) return;
+      const screen = terminalWrapper.querySelector('.xterm-screen');
+      if (!screen) return;
+      browseCursorEl = document.createElement('div');
+      browseCursorEl.className = 'browse-cursor';
+      const cell = getCellDimensions();
+      browseCursorEl.style.height = `${cell.height}px`;
+      screen.style.position = 'relative';
+      screen.appendChild(browseCursorEl);
+    }
+
+    function updateBrowseCursorPosition() {
+      if (!browseCursorEl) return;
+      const cell = getCellDimensions();
+      browseCursorEl.style.left = `${browseX * cell.width}px`;
+      browseCursorEl.style.top = `${browseY * cell.height}px`;
+      browseCursorEl.style.height = `${cell.height}px`;
+    }
+
+    function removeBrowseCursor() {
+      if (browseCursorEl) {
+        browseCursorEl.remove();
+        browseCursorEl = null;
+      }
+    }
+
+    function applyBrowseSelection() {
+      if (browseAnchorX === null) return;
+      let startX = browseAnchorX, startY = browseAnchorY;
+      let endX = browseX, endY = browseY;
+      // Normalize so start <= end
+      if (startY > endY || (startY === endY && startX > endX)) {
+        [startX, startY, endX, endY] = [endX, endY, startX, startY];
+      }
+      const cols = terminal.cols;
+      let length;
+      if (startY === endY) {
+        length = endX - startX;
+      } else {
+        length = (cols - startX) + ((endY - startY - 1) * cols) + endX;
+      }
+      if (length <= 0) { terminal.clearSelection(); return; }
+      const absRow = terminal.buffer.active.baseY + startY;
+      terminal.select(startX, absRow, length);
+    }
+
+    function enterBrowseMode(direction) {
+      browseActive = true;
+      browseX = terminal.buffer.active.cursorX;
+      browseY = terminal.buffer.active.cursorY;
+      browseAnchorX = null;
+      browseAnchorY = null;
+      // Move one row in the entry direction
+      if (direction === 'up') {
+        browseY = Math.max(0, browseY - 1);
+      } else {
+        browseY = Math.min(terminal.rows - 1, browseY + 1);
+      }
+      createBrowseCursor();
+      updateBrowseCursorPosition();
+    }
+
+    function exitBrowseMode() {
+      browseActive = false;
+      browseX = 0;
+      browseY = 0;
+      browseAnchorX = null;
+      browseAnchorY = null;
+      removeBrowseCursor();
+      terminal.clearSelection();
+    }
+
     // Custom key handler for word navigation, clipboard history, and Shift+Arrow selection
     terminal.attachCustomKeyEventHandler((e) => {
       const isMac = process.platform === 'darwin';
+
+      // --- Browse mode entry: Shift+Up/Down (no Alt/Ctrl/Meta, not already browsing) ---
+      if (e.type === 'keydown' && !browseActive && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
+          && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        enterBrowseMode(e.key === 'ArrowUp' ? 'up' : 'down');
+        return false;
+      }
+
+      // --- Browse mode active block ---
+      if (browseActive) {
+        if (e.type === 'keyup') return false; // swallow all keyups while browsing
+
+        if (e.type === 'keydown') {
+          const cols = terminal.cols;
+
+          // Escape or Enter → exit
+          if (e.key === 'Escape' || e.key === 'Enter') {
+            exitBrowseMode();
+            return false;
+          }
+
+          // Ctrl+C / Cmd+C → copy + exit
+          if ((e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) {
+            if (terminal.hasSelection()) {
+              const sel = terminal.getSelection();
+              if (sel) {
+                clipboard.writeText(sel);
+                if (clipboardHistory) clipboardHistory.add(sel);
+              }
+            }
+            exitBrowseMode();
+            return false;
+          }
+
+          // Plain arrows → move browse cursor, clear selection
+          if (!e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+            if (e.key === 'ArrowUp') {
+              browseY = Math.max(0, browseY - 1);
+              browseAnchorX = browseAnchorY = null;
+              terminal.clearSelection();
+              updateBrowseCursorPosition();
+              return false;
+            }
+            if (e.key === 'ArrowDown') {
+              browseY = Math.min(terminal.rows - 1, browseY + 1);
+              browseAnchorX = browseAnchorY = null;
+              terminal.clearSelection();
+              updateBrowseCursorPosition();
+              return false;
+            }
+            if (e.key === 'ArrowLeft') {
+              browseX = Math.max(0, browseX - 1);
+              browseAnchorX = browseAnchorY = null;
+              terminal.clearSelection();
+              updateBrowseCursorPosition();
+              return false;
+            }
+            if (e.key === 'ArrowRight') {
+              browseX = Math.min(cols - 1, browseX + 1);
+              browseAnchorX = browseAnchorY = null;
+              terminal.clearSelection();
+              updateBrowseCursorPosition();
+              return false;
+            }
+          }
+
+          // Shift+arrows → move + extend selection
+          if (e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+            if (browseAnchorX === null) { browseAnchorX = browseX; browseAnchorY = browseY; }
+            if (e.key === 'ArrowUp') { browseY = Math.max(0, browseY - 1); }
+            else if (e.key === 'ArrowDown') { browseY = Math.min(terminal.rows - 1, browseY + 1); }
+            else if (e.key === 'ArrowLeft') { browseX = Math.max(0, browseX - 1); }
+            else if (e.key === 'ArrowRight') { browseX = Math.min(cols - 1, browseX + 1); }
+            applyBrowseSelection();
+            updateBrowseCursorPosition();
+            return false;
+          }
+
+          // Shift+Alt+Arrow → word-jump selection
+          if (e.shiftKey && e.altKey && !e.ctrlKey && !e.metaKey) {
+            if (browseAnchorX === null) { browseAnchorX = browseX; browseAnchorY = browseY; }
+            if (e.key === 'ArrowLeft') {
+              browseX = wordBoundaryLeft(getLineText(browseY), browseX);
+            } else if (e.key === 'ArrowRight') {
+              browseX = wordBoundaryRight(getLineText(browseY), browseX);
+            }
+            applyBrowseSelection();
+            updateBrowseCursorPosition();
+            return false;
+          }
+
+          // Shift+Cmd+Arrow (mac) or Shift+Home/End → line selection
+          if (isMac && e.shiftKey && e.metaKey) {
+            if (browseAnchorX === null) { browseAnchorX = browseX; browseAnchorY = browseY; }
+            if (e.key === 'ArrowLeft') browseX = 0;
+            else if (e.key === 'ArrowRight') browseX = getLineLength(browseY);
+            applyBrowseSelection();
+            updateBrowseCursorPosition();
+            return false;
+          }
+          if (!isMac && e.shiftKey && (e.key === 'Home' || e.key === 'End')) {
+            if (browseAnchorX === null) { browseAnchorX = browseX; browseAnchorY = browseY; }
+            if (e.key === 'Home') browseX = 0;
+            else browseX = getLineLength(browseY);
+            applyBrowseSelection();
+            updateBrowseCursorPosition();
+            return false;
+          }
+
+          // Any other key → exit browse mode, let key pass through
+          const isModifierOnly = ['Shift', 'Control', 'Alt', 'Meta'].includes(e.key);
+          if (!isModifierOnly) {
+            exitBrowseMode();
+            return true;
+          }
+          return false;
+        }
+        return false;
+      }
 
       // Intercept Ctrl+C/Cmd+C to copy selection (Shift+Arrow or mouse)
       if (e.type === 'keydown' && (e.key === 'c' || e.key === 'C') && (e.ctrlKey || e.metaKey)) {
@@ -1707,6 +1915,11 @@ class PaneManager {
     // Clear Shift+Arrow selection state on mouse interaction
     terminalWrapper.addEventListener('mousedown', () => {
       selAnchorX = selAnchorY = selCurrentX = selCurrentY = null;
+    });
+
+    // Exit browse mode on terminal blur
+    terminal.textarea.addEventListener('blur', () => {
+      if (browseActive) exitBrowseMode();
     });
 
     setTimeout(() => {

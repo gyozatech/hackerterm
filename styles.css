@@ -1875,3 +1875,22 @@ body {
 .clipboard-history-item.selected .clipboard-history-number {
   color: var(--primary-color);
 }
+
+/* ========================================
+   BROWSE MODE CURSOR
+   ======================================== */
+
+.browse-cursor {
+  position: absolute;
+  width: 2px;
+  pointer-events: none;
+  z-index: 10;
+  background: var(--primary-color);
+  box-shadow: 0 0 6px var(--primary-glow), 0 0 12px var(--primary-glow);
+  animation: browse-cursor-blink 1s step-end infinite;
+}
+
+@keyframes browse-cursor-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
