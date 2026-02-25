@@ -1861,12 +1861,16 @@ class PaneManager {
         let match;
 
         while ((match = urlRegex.exec(lineText)) !== null) {
+          let url = match[0];
+          // Strip trailing sentence punctuation that's not part of the URL
+          url = url.replace(/[.,;:!]+$/, '');
+
           links.push({
             range: {
               start: { x: match.index + 1, y: bufferLineNumber },
-              end: { x: match.index + match[0].length, y: bufferLineNumber }
+              end: { x: match.index + url.length, y: bufferLineNumber }
             },
-            text: match[0],
+            text: url,
             decorations: { pointerCursor: true, underline: true },
             activate: (_event, text) => { shell.openExternal(text); }
           });
